@@ -11,8 +11,8 @@ The documented automation path ([nTop Automate](https://support.ntop.com/hc/en-u
 | Tool | Description |
 |------|-------------|
 | `inspect_notebook` | Version, sections, block and value counts, and what the root evaluates |
-| `read_graph` | Blocks with typed signatures, wiring and literal values; filterable |
-| `validate_graph` | Dangling inputs, duplicate ids, literals with no value, malformed list wiring |
+| `read_graph` | Blocks with typed signatures, wiring and literal values; filterable, 200 by default |
+| `validate_graph` | Dangling inputs, duplicate ids, missing root, literals with no value, extra edges past a `list<T>` parameter |
 | `set_literal_value` | Change a scalar, file path, vector, point, boolean or enum |
 | `set_input` | Rewire one input slot of a block |
 | `add_block` | Add a computed block from a typed signature |
@@ -20,14 +20,15 @@ The documented automation path ([nTop Automate](https://support.ntop.com/hc/en-u
 | `prune_graph` | Point the root at chosen outputs and drop everything unreachable |
 | `run_notebook` | Execute through `ntopcl`, returning structured errors, warnings and per-block timings |
 | `search_blocks` | Search the block signatures present in your nTop installation |
-| `mesh_stats` | Volume, area, bounding box, watertightness and connected components of an STL |
+| `mesh_stats` | Volume, area, bounding box, open and non-manifold edge counts, connected components |
 | `environment` | Report what the server can find on this machine |
 
 ## Requirements
 
 - **nTop** installed. Verified against **5.54.2** on Windows.
 - **nTop Automate** licence for `run_notebook`. This is licensed separately from the GUI seat; everything else works without it.
-- **Node.js 20+**.
+- **Node.js 20+** to run the server. The test suite needs **21+**, where `node --test` accepts a
+  glob.
 
 ## Install
 
@@ -63,15 +64,16 @@ Add to your MCP client config:
 Retarget an existing optimization at a different design space, cut it down to one output chain, and run it:
 
 ```
-read_graph      notebook=bracket.ntop filter=file_path
-set_literal_value notebook=bracket.ntop blockId=477 value={"val": "C:/parts/wedge.step"}
-prune_graph     notebook=bracket.ntop rootInputs=[900] output=bracket_run.ntop
-validate_graph  notebook=bracket_run.ntop
-run_notebook    notebook=bracket_run.ntop
-mesh_stats      path=C:/parts/result.stl listComponents=true
+read_graph         notebook=bracket.ntop filter=file_path
+set_literal_value  notebook=bracket.ntop blockId=477 value={"val": "C:/parts/wedge.step"}
+prune_graph        notebook=bracket.ntop rootInputs=[900] output=bracket_run.ntop
+run_notebook       notebook=bracket_run.ntop
+mesh_stats         path=C:/parts/result.stl listComponents=true
 ```
 
-`validate_graph` before `run_notebook` is worth the round trip: a `run_notebook` on a large model can take minutes, and most authoring mistakes are caught statically.
+The editing tools validate before they write and refuse to save a graph with errors, so anything
+they produce is already checked. Run `validate_graph` on notebooks this server did not write -
+one edited in the nTop GUI, say - before spending minutes on `run_notebook`.
 
 ## The notebook format
 
@@ -90,7 +92,7 @@ The `main` section holds two children: `fn`, the block graph as JSON, and `leave
 
 These cost real debugging time and are encoded in `validate_graph` or in tool descriptions where possible:
 
-- A `list<T>` parameter must be fed by exactly one `core.list<T>` block. Wiring two implicits straight into the list slot makes nTop reject the **entire file** at load with a generic "unable to load your file", naming nothing. `validate_graph` catches this.
+- A `list<T>` parameter must be fed by exactly one `core.list<T>` block. Wiring two implicits straight into the list slot makes nTop reject the **entire file** at load with a generic "unable to load your file", naming nothing. `validate_graph` catches the form this produces in practice: connected edges past the declared parameter count on a block that has a `list<T>` parameter.
 - Extra trailing unconnected input slots are normal. nTop emits them itself when a block version gains an optional parameter, so they are not an error.
 - `plane<point,vector,vector>` takes an origin and two vectors that **span** the plane. The normal is their cross product, not the second argument.
 - `offset_implicit` is inverted from intuition: a positive offset erodes. Rounding convex edges (a morphological opening) is `offset(+r)` then `offset(-r)`.
@@ -112,13 +114,17 @@ nTop stores its block signatures as ASCII strings inside its own binaries. `sear
 ## Development
 
 ```bash
-npm run check   # type-check
-npm test        # build, then run the test suite
+npm run check         # type-check src and test
+npm test              # build, then run the test suite
+npm run format:check  # Prettier is enforced by config, not by CI
 ```
 
-Tests are self-contained and do not require nTop. Two suites widen if it is present:
+Tests are self-contained and do not require nTop. Two suites widen given more to work with:
 
-- `NTOP_TEST_NOTEBOOKS` — semicolon-separated `.ntop` paths, round-tripped byte for byte.
+- `NTOP_TEST_NOTEBOOKS` — semicolon-separated `.ntop` paths, round-tripped byte for byte. This
+  is gated on the paths you supply, not on nTop being installed. No notebooks ship with the
+  repository, so the round-trip claim above is one you should re-verify against your own files
+  rather than take on trust.
 - The catalog suite scans a real installation when one is found, and skips otherwise.
 
 ## License

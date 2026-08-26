@@ -24,6 +24,8 @@ export interface NtopRunResult {
   completed: { block: string; ms: number }[];
   /** True when nTop rejected the file itself rather than a block inside it. */
   loadFailed: boolean;
+  /** True when the run hit its timeout and was killed rather than finishing. */
+  timedOut: boolean;
   log: LogEntry[];
   raw: string;
 }
@@ -64,7 +66,7 @@ export function parseLog(raw: string): LogEntry[] {
   for (const line of raw.split(/\r?\n/)) {
     const match = LOG_LINE.exec(line.trim());
     if (!match) continue;
-    const [, time, levelCode, rest] = match as unknown as [string, string, string, string];
+    const [, time, levelCode, rest] = [match[0], match[1]!, match[2]!, match[3]!];
     const level = levelCode === "E" ? "error" : levelCode === "W" ? "warning" : "info";
     const entry: LogEntry = { time, level, message: rest };
     const scoped = BLOCK_SCOPED.exec(rest);
@@ -78,7 +80,12 @@ export function parseLog(raw: string): LogEntry[] {
   return entries;
 }
 
-export function summarise(log: LogEntry[], exitCode: number | null, raw: string): NtopRunResult {
+export function summarise(
+  log: LogEntry[],
+  exitCode: number | null,
+  raw: string,
+  timedOut = false,
+): NtopRunResult {
   const errors = log.filter((e) => e.level === "error");
   const warnings = log.filter((e) => e.level === "warning");
   const completed: { block: string; ms: number }[] = [];
@@ -97,6 +104,7 @@ export function summarise(log: LogEntry[], exitCode: number | null, raw: string)
     warnings,
     completed,
     loadFailed,
+    timedOut,
     log,
     raw,
   };
@@ -118,22 +126,25 @@ export async function runNotebook(options: RunOptions): Promise<NtopRunResult> {
   args.push(options.notebook);
 
   const raw = await capture(exe, args, options.timeoutMs);
-  return summarise(parseLog(raw.output), raw.exitCode, raw.output);
+  return summarise(parseLog(raw.output), raw.exitCode, raw.output, raw.timedOut);
 }
 
 function capture(
   exe: string,
   args: string[],
   timeoutMs?: number,
-): Promise<{ output: string; exitCode: number | null }> {
+): Promise<{ output: string; exitCode: number | null; timedOut: boolean }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(exe, args, { windowsHide: true });
+    // stdin is closed: if ntopcl ever prompts - an unlicensed run, say - it should fail rather
+    // than block until the timeout.
+    const child = spawn(exe, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let output = "";
+    let timedOut = false;
     let timer: NodeJS.Timeout | undefined;
     if (timeoutMs !== undefined) {
       timer = setTimeout(() => {
+        timedOut = true;
         child.kill();
-        output += `\n[ntopology-mcp] killed after ${timeoutMs}ms\n`;
       }, timeoutMs);
     }
     child.stdout.on("data", (chunk: Buffer) => (output += chunk.toString()));
@@ -144,7 +155,7 @@ function capture(
     });
     child.on("close", (code) => {
       if (timer) clearTimeout(timer);
-      resolve({ output, exitCode: code });
+      resolve({ output, exitCode: code, timedOut });
     });
   });
 }

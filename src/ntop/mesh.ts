@@ -1,3 +1,9 @@
+// STL reading, writing and measurement.
+//
+// Lengths carry the units of the file itself. nTop's export block takes a
+// unit_length_enum, so a notebook that exports in metres produces a mesh whose numbers
+// are metres; the Mm3/Mm2 field names assume the millimetre exports these tools default to.
+
 import { readFileSync, writeFileSync } from "node:fs";
 
 export type Vec3 = [number, number, number];
@@ -78,7 +84,7 @@ function parseAscii(text: string): Triangle[] {
     }
   }
   if (tris.length === 0 && !/^\s*solid/.test(text)) {
-    throw new Error("not a recognizable STL file");
+    throw new Error("Not a recognisable STL file");
   }
   return tris;
 }

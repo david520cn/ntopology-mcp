@@ -1,7 +1,7 @@
 {
   "name": "ntopology-mcp",
   "version": "0.1.0",
-  "description": "MCP server for nTop (nTopology): read and edit notebook block graphs, run them headlessly through nTop Automate, and inspect the geometry that comes out.",
+  "description": "MCP server for nTop (nTopology): read and edit notebook block graphs, run them headlessly through nTop Automate, and measure the geometry that comes out.",
   "type": "module",
   "bin": {
     "ntopology-mcp": "dist/index.js"

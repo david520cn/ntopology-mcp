@@ -164,16 +164,27 @@ export function addLiteral(
   return block;
 }
 
+// Checks the leaves index as well as the block list: an orphaned value is only a warning, so a
+// graph can reach here holding a value whose block is gone, and pushing a second one would give
+// the id two entries.
 function assertFreeId(graph: Graph, id: number): void {
   if (graph.document.code.some((b) => b.id === id)) throw new Error(`Block id ${id} is already in use`);
+  if (graph.values.some((v) => v.id === String(id))) {
+    throw new Error(`Block id ${id} already has a value in the leaves index`);
+  }
 }
 
+// Rewiring replaces the source and nothing else. An input also carries `propchain` (which
+// picks a sub-entity, e.g. ["bodies",0,"faces",6]), `modelInputIdx` (which marks the input as
+// an exposed notebook variable for ntopcl -j) and `meta`. Rebuilding the input from scratch
+// would silently drop all three, so mutate in place.
 export function setInput(graph: Graph, blockId: number, slot: number, sourceId: number): void {
   const block = getBlock(graph, blockId);
-  if (slot < 0 || slot >= block.inputs.length) {
+  const input = block.inputs[slot];
+  if (!input) {
     throw new Error(`Block ${blockId} has ${block.inputs.length} inputs; slot ${slot} is out of range`);
   }
-  block.inputs[slot] = edge(sourceId);
+  input.instanceId = sourceId;
 }
 
 export function setLiteralValue(graph: Graph, blockId: number, value: unknown): void {
@@ -182,8 +193,12 @@ export function setLiteralValue(graph: Graph, blockId: number, value: unknown): 
   entry.value = value;
 }
 
+// Reuses the existing input object for any source that is already wired to the root, so a
+// re-ordering does not discard that input's metadata.
 export function setRootInputs(graph: Graph, sourceIds: number[]): void {
-  getBlock(graph, ROOT_ID).inputs = sourceIds.map((i) => edge(i));
+  const root = getBlock(graph, ROOT_ID);
+  const existing = new Map(root.inputs.map((i) => [i.instanceId, i]));
+  root.inputs = sourceIds.map((id) => existing.get(id) ?? edge(id));
 }
 
 export function reachableFrom(graph: Graph, rootId = ROOT_ID): Set<number> {
@@ -199,7 +214,6 @@ export function reachableFrom(graph: Graph, rootId = ROOT_ID): Set<number> {
   return seen;
 }
 
-/** Drops every block not reachable from the root. Returns the ids removed. */
 export function prune(graph: Graph, rootId = ROOT_ID): number[] {
   const keep = reachableFrom(graph, rootId);
   const removed = graph.document.code.filter((b) => !keep.has(b.id)).map((b) => b.id);
@@ -270,17 +284,20 @@ function checkArity(block: Block): Diagnostic[] {
   const extras = block.inputs.slice(declared).filter((i) => !UNCONNECTED.has(i.instanceId));
   if (extras.length === 0) return [];
 
-  const lastParam = signature.params[declared - 1] ?? "";
-  if (/^list</.test(lastParam)) {
-    const inner = lastParam.slice("list<".length, -1);
+  // The list parameter is not always last - topology_optimization takes one at index 2 of 11 -
+  // so search the whole parameter list rather than assuming a trailing one.
+  const listSlot = signature.params.findIndex((p) => p.startsWith("list<"));
+  if (listSlot >= 0) {
+    const param = signature.params[listSlot]!;
+    const inner = param.slice("list<".length, -1);
     return [
       {
         severity: "error",
         blockId: block.id,
         message:
           `Block ${block.id} ("${block.name}") passes ${block.inputs.length} inputs to a signature ` +
-          `declaring ${declared}. Its last parameter is ${lastParam}; nTop will refuse to load the ` +
-          `notebook. Connect a single core.list<${inner}> block to slot ${declared - 1} instead.`,
+          `declaring ${declared}. Parameter ${listSlot} is ${param}; nTop will refuse to load the ` +
+          `notebook. Connect a single core.list<${inner}> block to slot ${listSlot} instead.`,
       },
     ];
   }

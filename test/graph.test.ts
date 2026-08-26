@@ -5,6 +5,7 @@ import {
   addBlock,
   addLiteral,
   edge,
+  getBlock,
   nextBlockId,
   prune,
   reachableFrom,
@@ -185,4 +186,57 @@ test("core.list and core.group are variadic and never flagged for input count", 
   });
   setRootInputs(graph, [500, 501, 502]);
   assert.deepEqual(validate(graph), []);
+});
+
+// modelInputIdx marks an input as an exposed notebook variable and propchain selects a
+// sub-entity such as a specific face. Rewiring must not silently discard either.
+test("setInput preserves everything on the input except the source", () => {
+  const graph = emptyGraph();
+  addBlock(graph, { id: 600, name: "part", func: "core.var<brep>", type: "brep", inputs: [0] });
+  addBlock(graph, { id: 601, name: "other", func: "core.var<brep>", type: "brep", inputs: [0] });
+  const face = getBlock(graph, 600).inputs[0]!;
+  face.propchain = ["bodies", 0, "faces", 6];
+  face.modelInputIdx = 3;
+  face.meta.name = "Design space";
+  face.meta.expression = "4mm";
+
+  setInput(graph, 600, 0, 601);
+
+  const after = getBlock(graph, 600).inputs[0]!;
+  assert.equal(after.instanceId, 601);
+  assert.deepEqual(after.propchain, ["bodies", 0, "faces", 6]);
+  assert.equal(after.modelInputIdx, 3);
+  assert.equal(after.meta.name, "Design space");
+  assert.equal(after.meta.expression, "4mm");
+});
+
+// topology_optimization carries its list at parameter 2 of 11. Only the trailing-overflow
+// encoding is verified against real files, but the diagnostic must still point at the list
+// parameter wherever it sits, rather than assuming it is last.
+test("the diagnostic names a list parameter that is not last", () => {
+  const graph = emptyGraph();
+  const func =
+    "topology_optimization<fe_model,optimization_objective,list<optimization_constraint>," +
+    "integer,real,real,real_field,integer,real,real_field,real_field>[1.1.0]";
+  addBlock(graph, { id: 701, name: "c1", func: "core.var<real>", type: "real", inputs: [0] });
+  addBlock(graph, {
+    id: 700,
+    name: "topopt",
+    func,
+    type: "topology_optimization_result",
+    inputs: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 701],
+  });
+  const errors = validate(graph).filter((d) => d.severity === "error");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!.message, /core\.list<optimization_constraint>/);
+  assert.match(errors[0]!.message, /slot 2/);
+});
+
+test("addLiteral refuses an id that already has a leaves value", () => {
+  const graph = emptyGraph();
+  graph.values.push({ id: "800", type: "real", value: { val: 1 } });
+  assert.throws(
+    () => addLiteral(graph, { id: 800, name: "clash", type: "real", value: { val: 2 } }),
+    /already has a value/,
+  );
 });

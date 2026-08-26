@@ -31,7 +31,8 @@ function text(value: unknown): { content: { type: "text"; text: string }[] } {
   };
 }
 
-/** Loads a notebook, applies an edit, validates, and writes the result. */
+// Every mutating tool goes through here so that no edit can produce a notebook nTop would
+// refuse to load: the graph is validated before anything touches the disk.
 function edit(
   notebookPath: string,
   outputPath: string | undefined,
@@ -109,20 +110,24 @@ server.registerTool(
     const graph = loadGraph(readNotebook(notebook));
     const values = new Map(graph.values.map((v) => [v.id, v.value]));
     const needle = filter?.toLowerCase();
-    const blocks = graph.document.code
-      .filter(
-        (b) => !needle || b.name.toLowerCase().includes(needle) || b.func.toLowerCase().includes(needle),
-      )
-      .slice(0, limit ?? 200)
-      .map((b) => ({
-        id: b.id,
-        name: b.name,
-        func: b.func || null,
-        type: b.type,
-        inputs: b.inputs.map((i) => i.instanceId),
-        value: values.get(String(b.id)) ?? null,
-      }));
-    return text({ total: graph.document.code.length, returned: blocks.length, blocks });
+    const matching = graph.document.code.filter(
+      (b) => !needle || b.name.toLowerCase().includes(needle) || b.func.toLowerCase().includes(needle),
+    );
+    const blocks = matching.slice(0, limit ?? 200).map((b) => ({
+      id: b.id,
+      name: b.name,
+      func: b.func || null,
+      type: b.type,
+      inputs: b.inputs.map((i) => i.instanceId),
+      value: values.get(String(b.id)) ?? null,
+    }));
+    return text({
+      total: graph.document.code.length,
+      matched: matching.length,
+      returned: blocks.length,
+      truncated: blocks.length < matching.length,
+      blocks,
+    });
   },
 );
 
@@ -275,6 +280,7 @@ server.registerTool(
       success: result.success,
       exitCode: result.exitCode,
       loadFailed: result.loadFailed,
+      timedOut: result.timedOut,
       errors: result.errors,
       warnings: result.warnings,
       completed: result.completed,
@@ -333,7 +339,7 @@ server.registerTool(
   },
   async () => {
     const root = defaultInstallRoot();
-    let signatures: number | string = "not scanned";
+    let signatures: number | string;
     try {
       signatures = root ? catalog().length : "install not found";
     } catch (error) {
