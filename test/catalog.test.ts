@@ -200,3 +200,34 @@ describe("live installation", () => {
     assert.equal(new Set(catalog.map((s) => s.raw)).size, catalog.length);
   });
 });
+
+// nTop registers only the current revision of a block; older ones resolve as "Unknown block",
+// which is indistinguishable from an unlicensed toolkit. Newest must therefore come first.
+describe("version ordering", () => {
+  it("searchCatalog returns the newest revision of a name first", () => {
+    const catalog = [
+      parseSignature("construct_optimized_body<a,b>"),
+      parseSignature("construct_optimized_body<a,b>[1.2.0]"),
+      parseSignature("construct_optimized_body<a,b>[1.1.0]"),
+    ].filter((s): s is NonNullable<typeof s> => s !== null);
+
+    const hits = searchCatalog(catalog, "construct_optimized_body");
+    assert.equal(hits.length, 3);
+    assert.equal(hits[0]!.version, "1.2.0");
+    assert.equal(hits[1]!.version, "1.1.0");
+    assert.equal(hits[2]!.version, undefined);
+  });
+
+  it("handles multi-digit version components", () => {
+    const catalog = [
+      parseSignature("blk<a>[1.9.0]"),
+      parseSignature("blk<a>[1.10.0]"),
+      parseSignature("blk<a>[5.44.0]"),
+    ].filter((s): s is NonNullable<typeof s> => s !== null);
+    const hits = searchCatalog(catalog, "blk");
+    assert.deepEqual(
+      hits.map((h) => h.version),
+      ["5.44.0", "1.10.0", "1.9.0"],
+    );
+  });
+});

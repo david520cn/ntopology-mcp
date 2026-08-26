@@ -215,8 +215,32 @@ export function searchCatalog(
     ranked.push({ rank, signature });
   }
 
-  ranked.sort((a, b) => a.rank - b.rank || byRaw(a.signature, b.signature));
+  // The binaries carry every historical revision of a block, but nTop only registers the
+  // current one - an older revision resolves as "Unknown block" and is indistinguishable from
+  // an unlicensed toolkit. Surface the newest revision of a given name first so callers do not
+  // reach for a retired overload.
+  ranked.sort(
+    (a, b) =>
+      a.rank - b.rank ||
+      a.signature.name.localeCompare(b.signature.name) ||
+      compareVersionsDesc(a.signature.version, b.signature.version) ||
+      byRaw(a.signature, b.signature),
+  );
   return ranked.slice(0, limit).map((r) => r.signature);
+}
+
+/** Newest first; an unversioned signature sorts last, since bare forms are often the dead ones. */
+function compareVersionsDesc(a: string | undefined, b: string | undefined): number {
+  if (a === b) return 0;
+  if (a === undefined) return 1;
+  if (b === undefined) return -1;
+  const left = a.split(".").map(Number);
+  const right = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(left.length, right.length); i++) {
+    const diff = (right[i] ?? 0) - (left[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
 }
 
 function isDirectory(candidate: string): boolean {

@@ -292,7 +292,7 @@ server.registerTool(
   "search_blocks",
   {
     description:
-      "Search the block signatures present in the installed nTop binaries. Returns the exact typed signature strings that add_block needs.",
+      "Search the block signatures present in the installed nTop binaries. Returns the exact typed signature strings that add_block needs, newest revision of each name first. The binaries retain retired revisions, and nTop rejects those with the same error it gives an unlicensed toolkit - so prefer the highest [version] and distrust a bare unversioned form.",
     inputSchema: {
       query: z.string(),
       limit: z.number().int().positive().optional(),
