@@ -1,0 +1,54 @@
+{
+  "name": "ntopology-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for nTop (nTopology): read and edit notebook block graphs, run them headlessly through nTop Automate, and inspect the geometry that comes out.",
+  "type": "module",
+  "bin": {
+    "ntopology-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.test.json --noEmit",
+    "test": "npm run build && tsc -p tsconfig.test.json && node --test \"dist-test/test/*.test.js\"",
+    "format": "prettier --write \"{src,test}/**/*.ts\"",
+    "format:check": "prettier --check \"{src,test}/**/*.ts\"",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ntop",
+    "ntopology",
+    "topology-optimization",
+    "generative-design",
+    "cad"
+  ],
+  "author": "Sohum Suthar",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sohumsuthar/ntopology-mcp.git"
+  },
+  "homepage": "https://github.com/sohumsuthar/ntopology-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/sohumsuthar/ntopology-mcp/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3"
+  }
+}
