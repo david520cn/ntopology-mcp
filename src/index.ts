@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import * as z from "zod";
 
 import { buildCatalog, defaultInstallRoot, searchCatalog } from "./ntop/catalog.js";
@@ -8,6 +10,7 @@ import { readNotebook, writeNotebook, type Notebook } from "./ntop/container.js"
 import {
   addBlock,
   addLiteral,
+  getNotebookOutput,
   loadGraph,
   nextBlockId,
   prune,
@@ -15,6 +18,7 @@ import {
   saveGraph,
   setInput,
   setLiteralValue,
+  setNotebookOutput,
   setRootInputs,
   validate,
   type Graph,
@@ -346,6 +350,74 @@ server.registerTool(
       signatures = error instanceof Error ? error.message : String(error);
     }
     return text({ installRoot: root, ntopcl: findNtopcl(), signatures });
+  },
+);
+
+server.registerTool(
+  "set_output",
+  {
+    description:
+      "Choose which block ntopcl reports as the notebook output. Required before run_notebook's outputJson will produce anything - nTop reads the graph's own output key, not the root group's inputs, and answers \"can't find output in notebook\" when it is unset. Pass -1 to clear.",
+    inputSchema: {
+      notebook: z.string(),
+      blockId: z.number().int().describe("Block whose value becomes the notebook output, or -1 to clear"),
+      output: z.string().optional(),
+    },
+  },
+  async ({ notebook, blockId, output }) =>
+    edit(notebook, output, (graph) => {
+      setNotebookOutput(graph, blockId);
+      return `Notebook output set to block ${blockId}`;
+    }),
+);
+
+server.registerTool(
+  "find_example",
+  {
+    description:
+      "Search nTop's own shipped documentation for a block: working example notebooks and HTML reference pages. Consult this BEFORE reverse-engineering a block's wiring - nTop ships 100+ example .ntop files that show the correct inputs, literal shapes and property paths.",
+    inputSchema: {
+      query: z.string().describe('Block or topic name, e.g. "flow_analysis" or "lattice"'),
+      documentationRoot: z.string().optional(),
+    },
+  },
+  async ({ query, documentationRoot }) => {
+    const root = documentationRoot ?? "C:\ProgramData\nTopology\documentation";
+    if (!existsSync(root)) {
+      return text({ found: false, reason: `No nTop documentation directory at ${root}` });
+    }
+    const needle = query.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const hits: { path: string; kind: string }[] = [];
+    const walk = (dir: string, depth: number): void => {
+      if (depth > 3) return;
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full, depth + 1);
+        } else if (
+          entry.name
+            .toLowerCase()
+            .replace(/[^a-z0-9]/g, "")
+            .includes(needle)
+        ) {
+          const ext = entry.name.split(".").pop() ?? "";
+          if (ext === "ntop" || ext === "html") hits.push({ path: full, kind: ext });
+        }
+      }
+    };
+    walk(root, 0);
+    return text({
+      found: hits.length > 0,
+      documentationRoot: root,
+      examples: hits.filter((h) => h.kind === "ntop").slice(0, 20),
+      reference: hits.filter((h) => h.kind === "html").slice(0, 20),
+    });
   },
 );
 

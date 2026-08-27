@@ -82,6 +82,7 @@ test("the built server completes a handshake and advertises its tools", async ()
     "add_block",
     "add_literal",
     "environment",
+    "find_example",
     "inspect_notebook",
     "mesh_stats",
     "prune_graph",
@@ -90,6 +91,7 @@ test("the built server completes a handshake and advertises its tools", async ()
     "search_blocks",
     "set_input",
     "set_literal_value",
+    "set_output",
     "validate_graph",
   ]);
 
