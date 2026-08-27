@@ -201,6 +201,18 @@ export function setRootInputs(graph: Graph, sourceIds: number[]): void {
   root.inputs = sourceIds.map((id) => existing.get(id) ?? edge(id));
 }
 
+// `ntopcl -o` reports the block named by the fn document's top-level `output` key, NOT the root
+// group's inputs. A notebook with no output set answers "can't find output in notebook".
+export function getNotebookOutput(graph: Graph): number {
+  const value = graph.document["output"];
+  return typeof value === "number" ? value : -1;
+}
+
+export function setNotebookOutput(graph: Graph, blockId: number): void {
+  if (blockId !== -1) getBlock(graph, blockId);
+  graph.document["output"] = blockId;
+}
+
 export function reachableFrom(graph: Graph, rootId = ROOT_ID): Set<number> {
   const byId = new Map(graph.document.code.map((b) => [b.id, b]));
   const seen = new Set<number>([rootId]);

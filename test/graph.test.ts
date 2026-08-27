@@ -11,7 +11,9 @@ import {
   reachableFrom,
   ROOT_ID,
   setInput,
+  getNotebookOutput,
   setLiteralValue,
+  setNotebookOutput,
   setRootInputs,
   validate,
   type Graph,
@@ -239,4 +241,19 @@ test("addLiteral refuses an id that already has a leaves value", () => {
     () => addLiteral(graph, { id: 800, name: "clash", type: "real", value: { val: 2 } }),
     /already has a value/,
   );
+});
+
+// ntopcl -o reads the graph's own output key. Root-group inputs are not notebook outputs.
+test("notebook output is settable and defaults to unset", () => {
+  const graph = emptyGraph();
+  assert.equal(getNotebookOutput(graph), -1);
+  addBlock(graph, { id: 900, name: "result", func: "core.var<real>", type: "real", inputs: [0] });
+  setNotebookOutput(graph, 900);
+  assert.equal(getNotebookOutput(graph), 900);
+  setNotebookOutput(graph, -1);
+  assert.equal(getNotebookOutput(graph), -1);
+});
+
+test("notebook output rejects a block that does not exist", () => {
+  assert.throws(() => setNotebookOutput(emptyGraph(), 4242), /No block with id/);
 });
