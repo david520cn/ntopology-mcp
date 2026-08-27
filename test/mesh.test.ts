@@ -203,3 +203,23 @@ function jitter(v: Vec3): Vec3 {
   const d = (jitterSeed++ % 7) * 1e-7 - 3e-7;
   return [v[0] + d, v[1] - d, v[2] + d];
 }
+
+// A mesh with inward normals is watertight, manifold and the right size, so every other
+// statistic looks healthy - but nTop's tet mesher rejects it with a generic error that names
+// nothing. Orientation has to be reported or the failure is undiagnosable.
+test("an inside-out mesh is flagged while every other statistic stays healthy", () => {
+  const cube = box([0, 0, 0], [10, 10, 10]);
+  const flipped: Triangle[] = cube.map(([a, b, c]) => [a, c, b]);
+
+  const good = meshStats(cube);
+  const bad = meshStats(flipped);
+
+  assert.equal(good.inverted, false);
+  assert.equal(bad.inverted, true);
+
+  // everything else is indistinguishable, which is exactly why this needs its own flag
+  assert.ok(Math.abs(bad.volumeMm3 - good.volumeMm3) < 1e-9);
+  assert.equal(bad.openEdges, good.openEdges);
+  assert.equal(bad.nonManifoldEdges, good.nonManifoldEdges);
+  assert.equal(bad.components, good.components);
+});

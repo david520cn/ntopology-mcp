@@ -20,7 +20,7 @@ The documented automation path ([nTop Automate](https://support.ntop.com/hc/en-u
 | `prune_graph` | Point the root at chosen outputs and drop everything unreachable |
 | `run_notebook` | Execute through `ntopcl`, returning structured errors, warnings and per-block timings |
 | `search_blocks` | Search the block signatures present in your nTop installation |
-| `mesh_stats` | Volume, area, bounding box, open and non-manifold edge counts, connected components |
+| `mesh_stats` | Volume, area, bounding box, open and non-manifold edge counts, components, facet orientation |
 | `set_output` | Choose which block `ntopcl -o` reports as the notebook output |
 | `find_example` | Search nTop's own shipped example notebooks and reference pages |
 | `environment` | Report what the server can find on this machine |
@@ -103,6 +103,8 @@ These cost real debugging time and are encoded in `validate_graph` or in tool de
 - **The version suffix is load-bearing.** The binaries contain every historical revision of a block, but nTop registers only the current one. An old revision fails with the same "Unknown block … Toolkit or Connector that is not installed" message as an unlicensed toolkit, so a stale signature looks exactly like a missing licence. `search_blocks` returns the newest revision of a name first; prefer it, and treat a bare unversioned form with suspicion.
 - An unconnected input is `-1` (Empty), not `0` (None). `0` on a required input makes nTop refuse to load the file. But `-1` is not universally safe either: some optional inputs reject it with `Input at N is Empty but optional` and must be fed a literal. Match what the surrounding notebook already does, and let `validate_graph` and a trial run settle the rest.
 - `ntopcl -o` reports the block named by the graph's own `output` key, which `set_output` sets. The root group's inputs are not notebook outputs; without `set_output` you get `Output path specified, but can't find output in notebook.`
+- `ntopcl` exits 0 even when a block fails: it logs `[E]` and still prints "nTop successfully built". Never judge a run by its exit code alone - `run_notebook` reports `success` only when the exit code is 0, no error lines appeared, and the build line is present.
+- An inside-out mesh is silently fatal. Inward-facing normals make nTop's tet mesher fail with a generic "Volume meshing errors" naming nothing, while the mesh is watertight, manifold and correctly sized. `mesh_stats` reports `inverted` for exactly this case.
 - Result blocks that expose time series are indexed from 1, and step 1 is often a non-physical initialisation rather than the answer. Reading it produces plausible-looking nonsense with no error.
 - Preserving a region during optimization uses `passive_region_constraint<region>` fed by `fe_region_by_implicit`, added to the optimization constraint list. The Initial Density input does not freeze anything — [nTop documents it](https://support.ntop.com/hc/en-us/articles/360048490154-Understanding-the-Optimization-settings) as a starting guess only.
 

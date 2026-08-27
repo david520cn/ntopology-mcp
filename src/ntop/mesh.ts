@@ -23,6 +23,13 @@ export interface MeshStats {
   openEdges: number;
   nonManifoldEdges: number;
   components: number;
+  /**
+   * True when the facet winding encloses a negative volume, i.e. the normals point inward.
+   * Such a mesh is watertight, manifold and correctly sized, so every other field here looks
+   * healthy - but nTop's tet mesher rejects it with a generic "Volume meshing errors" that
+   * names nothing. Check this before blaming the mesher.
+   */
+  inverted: boolean;
 }
 
 export interface Component {
@@ -105,6 +112,7 @@ export function meshStats(tris: Triangle[]): MeshStats {
     triangles: tris.length,
     boundingBox: box,
     volumeMm3: Math.abs(volume),
+    inverted: volume < 0,
     surfaceAreaMm2: area,
     openEdges,
     nonManifoldEdges,
