@@ -21,6 +21,8 @@ The documented automation path ([nTop Automate](https://support.ntop.com/hc/en-u
 | `run_notebook` | Execute through `ntopcl`, returning structured errors, warnings and per-block timings |
 | `search_blocks` | Search the block signatures present in your nTop installation |
 | `mesh_stats` | Volume, area, bounding box, open and non-manifold edge counts, connected components |
+| `set_output` | Choose which block `ntopcl -o` reports as the notebook output |
+| `find_example` | Search nTop's own shipped example notebooks and reference pages |
 | `environment` | Report what the server can find on this machine |
 
 ## Requirements
@@ -99,8 +101,34 @@ These cost real debugging time and are encoded in `validate_graph` or in tool de
 - `boolean_union`'s blend enum: `1` adds material at the joint, `2` removes it, `0` is a hard union.
 - `implicit_to_mesh` v2.4.0's third input is Min Feature Size. Set it to 5 mm and a 5 mm plate silently disappears.
 - **The version suffix is load-bearing.** The binaries contain every historical revision of a block, but nTop registers only the current one. An old revision fails with the same "Unknown block … Toolkit or Connector that is not installed" message as an unlicensed toolkit, so a stale signature looks exactly like a missing licence. `search_blocks` returns the newest revision of a name first; prefer it, and treat a bare unversioned form with suspicion.
-- An unconnected input is `-1` (Empty), not `0` (None). `0` on a required input makes nTop refuse to load the file; `-1` is accepted. Optional inputs behave the other way round, so match what the surrounding notebook already does.
+- An unconnected input is `-1` (Empty), not `0` (None). `0` on a required input makes nTop refuse to load the file. But `-1` is not universally safe either: some optional inputs reject it with `Input at N is Empty but optional` and must be fed a literal. Match what the surrounding notebook already does, and let `validate_graph` and a trial run settle the rest.
+- `ntopcl -o` reports the block named by the graph's own `output` key, which `set_output` sets. The root group's inputs are not notebook outputs; without `set_output` you get `Output path specified, but can't find output in notebook.`
+- Result blocks that expose time series are indexed from 1, and step 1 is often a non-physical initialisation rather than the answer. Reading it produces plausible-looking nonsense with no error.
 - Preserving a region during optimization uses `passive_region_constraint<region>` fed by `fe_region_by_implicit`, added to the optimization constraint list. The Initial Density input does not freeze anything — [nTop documents it](https://support.ntop.com/hc/en-us/articles/360048490154-Understanding-the-Optimization-settings) as a starting guess only.
+
+### nTop ships its own examples - read them first
+
+nTop installs roughly 100 working example notebooks at
+`C:\ProgramData
+Topology\documentation\ExtendedBlockDocs\` and full HTML reference pages under
+`block-documentationlocks\`. `find_example` searches both. An example notebook settles a block's
+wiring, literal shapes and property paths in seconds, where reverse-engineering the same thing from
+error messages takes hours. Check there before guessing.
+
+### Literal value shapes
+
+Literal values are stored per type and the shapes are not uniform:
+
+| Type | Value |
+|---|---|
+| `real` | `{"isFinite":true,"units":{"length":1},"val":0.005}` (SI - metres) |
+| `point` | array of three such objects |
+| `text` | `{"string":"inlet"}` - **not** `{"val":...}` |
+| `choice` | `{"choices":["Full Analysis","Potential Flow"],"selected":0}` |
+| `file_path` | `{"val":"C:/path/to/file.step"}` |
+| `unit_length_enum` | `{"id":"mm"}` |
+
+A wrong shape fails at load with `Leaf failed to deserialize with block/variable <name>`.
 
 ### Block signatures
 
