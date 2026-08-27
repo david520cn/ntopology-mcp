@@ -231,3 +231,32 @@ describe("version ordering", () => {
     );
   });
 });
+
+// Fluids materials take no parameters, so they carry no angle brackets and the bracket scan
+// cannot see them. Only namespaced+versioned bare names are accepted, or binary noise floods in.
+describe("nullary signatures", () => {
+  it("parses a namespaced, versioned block with no parameters", () => {
+    const parsed = parseSignature("ntoptoolkits.fluids__beta_.water[5.23.0]");
+    assert.ok(parsed);
+    assert.equal(parsed.name, "water");
+    assert.equal(parsed.namespace, "ntoptoolkits.fluids__beta_");
+    assert.deepEqual(parsed.params, []);
+    assert.equal(parsed.version, "5.23.0");
+  });
+
+  it("rejects bare words that would otherwise flood the catalog", () => {
+    assert.equal(parseSignature("water"), null);
+    assert.equal(parseSignature("water[5.23.0]"), null);
+    assert.equal(parseSignature("ntoptoolkits.fluids__beta_.water"), null);
+  });
+
+  it("recovers a nullary signature planted in a binary", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nullary-"));
+    const file = join(dir, "probe.bin");
+    const planted = "ntoptoolkits.fluids__beta_.water[5.23.0]";
+    writeFileSync(file, Buffer.concat([Buffer.alloc(64), Buffer.from(planted, "latin1"), Buffer.alloc(64)]));
+    const found = extractFromBinary(file);
+    rmSync(dir, { recursive: true, force: true });
+    assert.ok(found.includes(planted), `expected to recover ${planted}, got ${JSON.stringify(found)}`);
+  });
+});

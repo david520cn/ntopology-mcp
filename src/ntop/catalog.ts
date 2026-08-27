@@ -32,6 +32,11 @@ const BINARY_EXTENSIONS = new Set([".exe", ".dll"]);
 const DEFAULT_WINDOWS_ROOT = "C:\\Program Files\\nTopology\\nTopology";
 
 const SIGNATURE = /^([a-z0-9_.]+)<([a-z0-9_,<>]+)>(?:\[(\d+\.\d+\.\d+)\])?$/;
+// Some blocks take no parameters at all and so carry no angle brackets - the fluids materials
+// (ntoptoolkits.fluids__beta_.water[5.23.0]) are the known case. A bare lowercase word is far
+// too common in a binary to accept, so the zero-argument form is only recognised when it is
+// both namespaced and versioned, which is specific enough not to admit noise.
+const NULLARY_SIGNATURE = /^([a-z0-9_]+(?:\.[a-z0-9_]+)+)\[(\d+\.\d+\.\d+)\]$/;
 const NAME_CHAR = /[a-z0-9_.]/;
 const PARAM_CHAR = /[a-z0-9_,]/;
 
@@ -57,6 +62,18 @@ function splitTopLevel(body: string): string[] | null {
 }
 
 export function parseSignature(raw: string): BlockSignature | null {
+  const nullary = NULLARY_SIGNATURE.exec(raw);
+  if (nullary) {
+    const qualified = nullary[1]!;
+    const cut = qualified.lastIndexOf(".");
+    return {
+      raw,
+      name: qualified.slice(cut + 1),
+      params: [],
+      version: nullary[2]!,
+      namespace: qualified.slice(0, cut),
+    };
+  }
   const match = SIGNATURE.exec(raw);
   if (match === null) return null;
 
@@ -115,6 +132,25 @@ function collectFromRun(run: string, out: Set<string>): void {
   }
 }
 
+// Nullary blocks carry no angle brackets, so the bracket scan above cannot see them. Walk back
+// from each version suffix over name characters instead; parseSignature rejects anything that is
+// not both namespaced and versioned.
+const VERSION_ANYWHERE = /\[\d+\.\d+\.\d+\]/g;
+
+function collectNullaryFromRun(run: string, out: Set<string>): void {
+  VERSION_ANYWHERE.lastIndex = 0;
+  let hit: RegExpExecArray | null;
+  while ((hit = VERSION_ANYWHERE.exec(run)) !== null) {
+    const suffixStart = hit.index;
+    if (run[suffixStart - 1] === ">") continue; // already handled by the bracket scan
+    let nameStart = suffixStart;
+    while (nameStart > 0 && NAME_CHAR.test(run[nameStart - 1] as string)) nameStart--;
+    if (nameStart === suffixStart) continue;
+    const candidate = run.slice(nameStart, suffixStart + hit[0].length);
+    if (parseSignature(candidate) !== null) out.add(candidate);
+  }
+}
+
 function scanChunk(buffer: Buffer, length: number, out: Set<string>): void {
   let runStart = -1;
   for (let i = 0; i < length; i++) {
@@ -123,13 +159,17 @@ function scanChunk(buffer: Buffer, length: number, out: Set<string>): void {
       if (runStart < 0) runStart = i;
     } else {
       if (runStart >= 0 && i - runStart >= MIN_RUN_LENGTH) {
-        collectFromRun(buffer.toString("latin1", runStart, i), out);
+        const run = buffer.toString("latin1", runStart, i);
+        collectFromRun(run, out);
+        collectNullaryFromRun(run, out);
       }
       runStart = -1;
     }
   }
   if (runStart >= 0 && length - runStart >= MIN_RUN_LENGTH) {
-    collectFromRun(buffer.toString("latin1", runStart, length), out);
+    const tail = buffer.toString("latin1", runStart, length);
+    collectFromRun(tail, out);
+    collectNullaryFromRun(tail, out);
   }
 }
 
