@@ -1,0 +1,115 @@
+# Round-trip compatibility check.
+#
+# The unit tests in this repo do not need any nTop installation — they cover
+# the parser, graph editor, mesh math and catalog logic on synthetic inputs.
+# The real compatibility question is whether the .ntop files written by the
+# latest nTop release still round-trip through this project's parser and
+# writer byte-for-byte. That needs real notebooks, which the repository does
+# not ship (the .ntop format is nTop's and we deliberately do not redistribute
+# example files).
+#
+# This workflow runs the round-trip script and the matching test suite when
+# fixtures are present, and stays green otherwise. To enable the check:
+#
+#   1. Collect one or more .ntop files written by the nTop release you want
+#      to support (ExtendedBlockDocs is a good source: search the nTop
+#      install for *.ntop under documentation/).
+#   2. Drop them under test/fixtures/ and commit. They will be uploaded
+#      with the rest of the repo and used here.
+#
+# On a regression (nTop changes the container format and round-trip fails),
+# the diff is dumped to the JSON report artifact and the workflow fails.
+# The fix is usually a one-line change in src/ntop/container.ts.
+
+name: round-trip
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "21"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests
+        run: npm test
+
+  round-trip:
+    name: round-trip against committed fixtures
+    # nTop binaries are Windows-only, but the round-trip test itself is pure
+    # Node.js — it parses the project's container module. Linux is faster and
+    # cheaper to run, so we use it here. If a fixture's bytes include OS-specific
+    # quirks (unlikely — the format is just JSON wrapped in sections), switch
+    # this to windows-latest.
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "21"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Round-trip (when test/fixtures/ has .ntop files)
+        id: roundtrip
+        run: |
+          mkdir -p reports
+          if compgen -G "test/fixtures/*.ntop" >/dev/null 2>&1 ||
+             compgen -G "test/fixtures/**/*.ntop" >/dev/null 2>&1; then
+            echo "fixtures_present=true" >> "$GITHUB_OUTPUT"
+            node scripts/round-trip.mjs \
+              --dir test/fixtures --recursive \
+              --iterations 3 --diff-on-fail \
+              --json --report reports/round-trip.json
+          else
+            echo "fixtures_present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No .ntop fixtures under test/fixtures/. Round-trip skipped — see .github/workflows/round-trip.yml for how to enable."
+          fi
+
+      - name: Run round-trip via node:test too
+        env:
+          NTOP_TEST_NOTEBOOKS_DIR: test/fixtures
+          NTOP_TEST_ITERATIONS: "3"
+        run: |
+          if compgen -G "test/fixtures/*.ntop" >/dev/null 2>&1 ||
+             compgen -G "test/fixtures/**/*.ntop" >/dev/null 2>&1; then
+            npm test
+          fi
+
+      - name: Upload round-trip report
+        if: always() && steps.roundtrip.outputs.fixtures_present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: round-trip-report
+          path: reports/round-trip.json
+          if-no-files-found: ignore
+          retention-days: 30
